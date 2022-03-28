@@ -1,0 +1,145 @@
+// This source code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+// © tjroberts314
+
+//@version=5
+indicator("1dte", overlay=true)
+import tjroberts314/Utils/1
+
+daysInARow = input.int(1, "Successive Bars in a Row", minval=1, maxval=10)
+atr_range = input.float(1.0, "ATR value", minval=0, maxval=3, step=0.1)
+toggle_mod = input.bool(true, "Modify atr")
+toggle_monday = input.bool(true, "Monday DTE")
+toggle_wednesday = input.bool(true, "Wednesday DTE")
+toggle_friday = input.bool(true, "Friday DTE")
+
+vix = request.security("VIX", "D", close)
+
+put1 = input.float(0.8, "1 red day", minval=0.0, maxval=2, step=0.1)
+put2 = input.float(0.4, "2 red day", minval=0.0, maxval=2, step=0.1)
+put3 = input.float(0.3, "3 red day", minval=0.0, maxval=2, step=0.1)
+put4 = input.float(0.0, "4 red day", minval=0.0, maxval=2, step=0.1)
+
+call1 = input.float(0.8, "1 green day", minval=0.0, maxval=2, step=0.1)
+call2 = input.float(0.4, "2 green day", minval=0.0, maxval=2, step=0.1)
+call3 = input.float(0.3, "3 green day", minval=0.0, maxval=2, step=0.1)
+call4 = input.float(0.0, "4 green day", minval=0.0, maxval=2, step=0.1)
+
+redStreak = true
+greenStreak = true
+rsi_value = ta.rsi(close, 14)
+PROFIT = 25 / atr_range
+LOSS = 500 - PROFIT
+
+var float sucCnt = 0
+var float totalCnt = 0
+var int callWins = 0
+var int callLosses = 0
+var int putWins = 0
+var int putLosses = 0
+var float seedValue = 0
+var float profit = 0
+var float loss = 0
+
+
+startDate = input.time(title="Start Date", defval=timestamp("01 Jan 2015 13:30 +0000"))
+endDate = input.time(title="End Date", defval=timestamp("01 Jan 2024 19:30 +0000"))
+timeSession = input.session(title="Time Session to Analyze", defval="0600-0915")
+window() => time >= startDate and time <= endDate ? true : false
+validDayOfWeek() => (dayofweek == dayofweek.monday and toggle_monday) or (dayofweek == dayofweek.wednesday and toggle_wednesday) or (dayofweek == dayofweek.friday and toggle_friday)
+canTrade1dte() => validDayOfWeek()
+
+green_cnt = 0
+red_cnt = 0
+
+for day = 1 to daysInARow
+    if close[day] <= open[day]
+        greenStreak := false
+        break
+
+for day = 1 to daysInARow
+    if close[day] >= open[day]
+        redStreak := false
+        break
+
+for day = 1 to 50
+    if close[day] <= open[day]
+        break
+    green_cnt += 1
+
+for day = 1 to 50
+    if close[day] >= open[day]
+        break
+    red_cnt += 1
+
+atr = ta.atr(14)
+if toggle_mod
+    if 0 < red_cnt
+        if red_cnt == 1
+            atr *= atr_range + put1 // 0.4
+        else if red_cnt == 2
+            atr *= atr_range + put2 // 0.3
+        else if red_cnt == 3
+            atr *= atr_range + put3 // 0.2
+        else if red_cnt == 4
+            atr *= atr_range + put4 // 0.1
+        else
+            atr *= atr_range
+    else if 0 < green_cnt
+        if green_cnt == 1
+            atr *= atr_range + call1
+        else if green_cnt == 2
+            atr *= atr_range + call2
+        else if green_cnt == 3
+            atr *= atr_range + call3
+        else if green_cnt == 4
+            atr *= atr_range + call4
+        else
+            atr *= atr_range
+    else
+        atr *= atr_range
+else
+    atr *= atr_range
+
+putProfit = (close[1] - atr) < close
+callProfit = (close[1] + atr) > close
+
+plotshape(canTrade1dte() and window() and redStreak and putProfit, title="PUT", style=shape.triangleup, location=location.belowbar, color=color.green)
+plotshape(canTrade1dte() and window() and redStreak and not putProfit, title="PUT", style=shape.triangledown, location=location.belowbar, color=color.red)
+
+plotshape(canTrade1dte() and window() and greenStreak and callProfit, title="CALL", style=shape.triangleup, location=location.abovebar, color=color.green)
+plotshape(canTrade1dte() and window() and greenStreak and not callProfit, title="CALL", style=shape.triangledown, location=location.abovebar, color=color.red)
+
+if window() and canTrade1dte()
+    if redStreak and putProfit
+        putWins += 1
+        profit += PROFIT
+    else if greenStreak and callProfit
+        callWins += 1
+        profit += PROFIT
+    else if redStreak and not putProfit
+        putLosses += 1
+        loss += LOSS
+    else if greenStreak and not callProfit
+        callLosses += 1
+        loss += LOSS
+
+float totalWins = callWins + putWins
+float successRate = totalWins / (totalWins + callLosses + putLosses)
+
+var table tableDisplay = table.new(position.bottom_right, columns = 2, rows = 6, frame_color= color.gray, frame_width = 2, border_width = 2, border_color = color.gray)
+
+if barstate.islast
+    table.cell(table_id = tableDisplay, column = 0, row = 0, text = "Success Rate", text_color = color.gray)
+    table.cell(table_id = tableDisplay, column = 0, row = 1, text = "Put Wins", text_color = color.gray)
+    table.cell(table_id = tableDisplay, column = 0, row = 2, text = "Put Losses", text_color = color.gray)
+    table.cell(table_id = tableDisplay, column = 0, row = 3, text = "Call Wins", text_color = color.gray)
+    table.cell(table_id = tableDisplay, column = 0, row = 4, text = "Call Losses", text_color = color.gray)
+    table.cell(table_id = tableDisplay, column = 0, row = 5, text = "Final Balance", text_color = color.gray)
+    
+    table.cell(table_id = tableDisplay, column = 1, row = 0, text = str.tostring(successRate), text_color = color.gray)
+    table.cell(table_id = tableDisplay, column = 1, row = 1, text = str.tostring(putWins), text_color = color.gray)
+    table.cell(table_id = tableDisplay, column = 1, row = 2, text = str.tostring(putLosses), text_color = color.gray)
+    table.cell(table_id = tableDisplay, column = 1, row = 3, text = str.tostring(callWins), text_color = color.gray)
+    table.cell(table_id = tableDisplay, column = 1, row = 4, text = str.tostring(callLosses), text_color = color.gray)
+    table.cell(table_id = tableDisplay, column = 1, row = 5, text = str.tostring(profit - loss), text_color = color.gray)
+
