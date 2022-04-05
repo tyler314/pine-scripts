@@ -8,23 +8,23 @@ indicator("0DTE_IF",overlay=true)
 var float profit = 0
 var int wins = 0
 var int losses = 0
-CANDLE_WIDTH = 3
+CANDLE_WIDTH = 3 //int(math.round(str.tonumber(timeframe.period)))
 MAX_GAIN = 150
 MAX_LOSS = 300
 atr = ta.atr(14)
+var bool is_trade_open = false
 
 // Input
-hour_enter = input.int(title="enter hour time", defval=10, minval=9, maxval=15)
-minute_enter = input.int(title="enter minute time", defval=30, minval=0, maxval=59, step=CANDLE_WIDTH)
-hour_exit = input.int(title="exit hour time", defval=11, minval=9, maxval=15)
-minute_exit = input.int(title="exit minute time", defval=30, minval=0, maxval=59, step=CANDLE_WIDTH)
+hour_enter = input.int(title="hour", defval=10, minval=9, maxval=15, inline="0", group="enter time")
+minute_enter = input.int(title="minute", defval=30, minval=0, maxval=59, step=CANDLE_WIDTH, inline="0", group="enter time")
+hour_exit = input.int(title="hour", defval=11, minval=9, maxval=15, inline="1", group="exit time")
+minute_exit = input.int(title="minute", defval=30, minval=0, maxval=59, step=CANDLE_WIDTH, inline="1", group="exit time")
 
 vix_limit = input.int(title="vix limit", defval=22, minval=1, maxval=40)
-atr_input = input.int(title="atr input", defval=10, minval=1, maxval=200)
+change_in_SPX = input.int(title="change in SPX", defval=10, minval=1, maxval=200)
 
 startDate = input.time(title="Start Date", defval=timestamp("01 Jan 2022 13:30 +0000"))
 endDate = input.time(title="End Date", defval=timestamp("01 Jan 2024 19:30 +0000"))
-timeSession = input.session(title="Time Session to Analyze", defval="0600-0915")
 window() => time >= startDate and time <= endDate ? true : false
 
 // Functions
@@ -48,24 +48,30 @@ get_minutes_past_enter() =>
     else
         diff
 
-can_enter_trade() => valid_day_of_week() and valid_time(hour_enter, minute_enter) // and valid_VIX()
-can_exit_trade() => valid_day_of_week() and valid_time(hour_exit ,minute_exit) // and valid_VIX()
+can_enter_trade() => valid_day_of_week() and valid_time(hour_enter, minute_enter) and valid_VIX()
+can_exit_trade() => valid_day_of_week() and valid_time(hour_exit, minute_exit) 
 
 // MAIN FUNCTION - START HERE
 points_changed_since_enter = math.abs(close[0] - close[int(get_minutes_past_enter()/CANDLE_WIDTH)])
-is_win() => can_exit_trade() and points_changed_since_enter  <= atr_input
-is_loss() => can_exit_trade() and points_changed_since_enter > atr_input
+is_win() => points_changed_since_enter  <= change_in_SPX
+is_loss() => points_changed_since_enter > change_in_SPX
 
-if is_win()
-    profit += MAX_GAIN
-    wins += 1
-if is_loss()
-    profit -= MAX_LOSS
-    losses += 1
+plotshape(can_enter_trade(), title="CALL", style=shape.triangleup, location=location.abovebar, color=color.green)
+plotshape(is_trade_open and can_exit_trade(), title="CALL", style=shape.triangledown, location=location.abovebar, color=color.purple)
+
+if can_enter_trade() == true
+    is_trade_open := true
+
+if is_trade_open == true and can_exit_trade()
+    if is_win()
+        profit += MAX_GAIN
+        wins += 1
+    if is_loss()
+        profit -= MAX_LOSS
+        losses += 1
+    is_trade_open := false
    
 successRate = wins / (wins + losses)   
-plotshape(can_enter_trade(), title="CALL", style=shape.triangleup, location=location.abovebar, color=color.green)
-plotshape(can_exit_trade(), title="CALL", style=shape.triangledown, location=location.abovebar, color=color.purple)
 
 var table tableDisplay = table.new(position.bottom_right, columns = 2, rows = 6, frame_color= color.gray, frame_width = 2, border_width = 2, border_color = color.gray)
 if barstate.islast
